@@ -1,0 +1,67 @@
+
+project goal: develop a modular android application designed to function as sophisticated ransomware, compatible with Android 6.0 (API 23) through Android 15 (API 35/Expected). The application will feature a themed UI, request necessary permissions, encrypt user files using configurable strategies (extension/directory targeting, partial encryption, secure delete, exclusions), exfiltrate the unique encryption key to a Telegram bot, display a remotely configurable ransom note overlay, allow remote wallpaper changes, implement robust persistence, and be controllable via an interactive, stateful Telegram bot C2 interface with alias support.
+Core Development Principles:
+Modularity: Structure the entire project using separate Java/Kotlin files/classes for distinct functionalities (UI, Permissions, Config, Scanning, Encryption, Telegram Comms, Persistence, Overlay, Wallpaper, Logging, Service Orchestration) to ensure separation of concerns and maintainability.
+Remote Configuration: Design the application so key parameters (encryption targets, exclusions, thresholds, ransom note content URL, wallpaper URL) are dynamically loaded from a central configuration module and can be updated remotely via Telegram C2 commands.
+Compatibility (API 23-35+): Consistently apply version-aware logic (Build.VERSION.SDK_INT checks) across all relevant modules for handling differences in permissions, file access (Scoped Storage vs. legacy vs. MANAGE_EXTERNAL_STORAGE), background execution, notifications, overlay types, and other APIs. Set minSdkVersion to 23 and targetSdkVersion appropriately (e.g., 34 or 35).
+Required Android Permissions (Declare in AndroidManifest.xml):
+android.permission.READ_EXTERNAL_STORAGE
+android.permission.WRITE_EXTERNAL_STORAGE (android:maxSdkVersion="28" if strictly needed, but check interaction with MANAGE_EXTERNAL_STORAGE)
+android.permission.MANAGE_EXTERNAL_STORAGE (Crucial for API 30+)
+android.permission.INTERNET
+android.permission.FOREGROUND_SERVICE (Declare appropriate type like dataSync for API 31+)
+android.permission.RECEIVE_BOOT_COMPLETED
+android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+android.permission.SYSTEM_ALERT_WINDOW
+android.permission.SET_WALLPAPER
+android.permission.POST_NOTIFICATIONS (API 33+)
+(Optional, based on chosen C2 commands):
+android.permission.ACCESS_FINE_LOCATION, android.permission.ACCESS_COARSE_LOCATION (for get_location)
+android.permission.READ_CONTACTS (for list_contacts)
+android.permission.READ_SMS (for list_sms)
+android.permission.SEND_SMS (for send_sms)
+android.permission.READ_CALL_LOG (for list_call_log)
+android.permission.CALL_PHONE (for Phone)
+android.permission.GET_ACCOUNTS (for get_account_info, restricted)
+android.permission.REQUEST_INSTALL_PACKAGES (for update_app)
+(Optional, for advanced persistence): Declare Device Admin receiver/policies and Accessibility Service configuration if implementing these features.
+Modular Components (Separate Files/Classes):
+MainActivity.java/kt: Entry point, Kawaii UI, hosts WebView, orchestrates initial permission requests via PermissionManager.
+PermissionManager.java/kt: Helper class to check and request all necessary runtime and special permissions sequentially, handling API level differences.
+Config.java/kt: Manages all application configurations (Telegram info, targets, exclusions, URLs, thresholds). Loads defaults, stores persistently (SharedPreferences), allows dynamic retrieval (get) and updates (update).
+MainService.java/kt: The core orchestrator running as a ForegroundService. Manages state, coordinates modules, handles C2 command dispatching, implements error handling and retry logic.
+FileScanner.java/kt: Implements version-aware file scanning logic, using combined directory/extension targeting and respecting exclusions loaded dynamically from Config.
+EncryptionManager.java/kt: Handles AES-256 GCM key generation, file encryption (implementing partial encryption based on threshold from Config), secure deletion (overwriting originals), placeholder file creation/validation (for validate_key), and decryption.
+TelegramBotHandler.java/kt: Manages all communication with the Telegram Bot API (polling getUpdates, sending registration, key exfiltration, command responses/results). Uses OkHttp or similar.
+OverlayManager.java/kt: Manages the persistent ransom note overlay using SYSTEM_ALERT_WINDOW. Dynamically loads HTML content from a URL specified in Config, handles downloads/errors, provides refresh mechanism.
+WallpaperManager.java/kt: Handles downloading image from URL (specified in Config via C2) and setting it as device wallpaper using android.app.WallpaperManager. Requires SET_WALLPAPER permission.
+BootReceiver.java/kt: Listens for BOOT_COMPLETED to restart MainService, respecting background start restrictions.
+LogManager.java/kt: Implements an internal logging buffer (in-memory or file) to store critical events and errors, accessible via C2 (get_logs).
+PersistenceHelper.java/kt (Optional): Encapsulates logic for interacting with Device Admin APIs or Accessibility Service APIs if these advanced persistence methods are implemented.
+Phase 1: Kawaii UI, Permissions, and Initial Setup
+Implement UI (MainActivity, Layouts, Theme, Assets): Create the Kawaii Anime styled UI, including the WebView loading the styled welcome.html. Define theme resources.
+Implement Permission Flow (PermissionManager, MainActivity): Implement the PermissionManager to handle sequential requests for ALL required permissions (including SET_WALLPAPER and any optional ones selected). MainActivity drives this flow, guiding the user.
+Complete Setup (MainActivity): Upon successful permission grants, hide the app's launcher icon, start MainService, and finish MainActivity.
+Phase 2: Core Logic - Modules & Initial Actions
+Implement Core Modules (MainService, Config, LogManager): Set up MainService structure (Foreground Service, state tracking), Config loading/storage, and LogManager buffer.
+Implement File Handling (FileScanner, EncryptionManager): Develop version-aware FileScanner (using Config for targets/exclusions). Develop EncryptionManager (AES key gen, partial encryption logic using Config threshold, secure delete, placeholder file logic). Key stored locally temporarily.
+Implement Persistence & UI Modules (BootReceiver, OverlayManager, WallpaperManager, Optional PersistenceHelper): Implement boot receiver logic. Implement OverlayManager (version-aware, initially displaying default note with DeviceID, logic for URL loading). Implement WallpaperManager structure (download/set logic). Structure optional persistence helpers.
+Integrate Initial Workflow (MainService): Orchestrate: Generate DeviceID -> Trigger FileScanner -> Generate AES Key (EncryptionManager) -> Trigger Encryption/Secure Delete (EncryptionManager) -> Trigger Overlay Display (OverlayManager). Log critical steps via LogManager. Manage state.
+Phase 3: C2 Communication, Remote Control, Decryption, Final Integration
+Implement Telegram Communication (TelegramBotHandler): Implement robust polling (getUpdates), message sending (registration, key, responses), error handling, retries.
+Implement C2 Command Handling (MainService):
+Poll for commands via TelegramBotHandler, filter commands for own DeviceID.
+Implement the dispatcher to parse and execute the full set of Device-Specific Commands (e.g., get_summary, get_encryption_stats, check_key_status, trigger_encryption, decrypt [KEY], validate_key [KEY], set_config [Key] [Value], set_ransom_note_url [URL], set_wallpaper_url [URL], get_active_config, reload_config, force_encrypt_path [Path], show_note, hide_note, refresh_note, get_logs, trigger_persistence_check, etc., including any optional commands chosen).
+Delegate actions to the correct modules (Config.update, EncryptionManager.decryptFile, WallpaperManager.setWallpaperFromUrl, OverlayManager.refreshContent, LogManager.getLogs, etc.).
+Send results/status/data back to the bot via TelegramBotHandler. Handle execution errors and report them.
+Implement Key Exfiltration & Wiping (MainService, TelegramBotHandler, EncryptionManager): Trigger sending the generated AES key via TelegramBotHandler. Upon confirmed successful transmission, securely wipe the key from the device (EncryptionManager). Implement check_key_status reporting.
+Implement Decryption (EncryptionManager): Fully implement decryptFile method, correctly handling both fully and partially encrypted files using the C2-provided key. Implement validate_key logic using the placeholder file.
+Implement Dynamic Content (OverlayManager, WallpaperManager): Ensure OverlayManager correctly downloads and displays HTML from URL set via C2. Ensure WallpaperManager correctly downloads and sets wallpaper from URL set via C2. Test error handling for downloads.
+Implement Bot-Side Logic (Separate Task): Remind yourself that the Telegram Bot itself needs separate implementation to handle:
+Global Commands: help, list_devices, search_devices, set_alias, select, selected, refresh, delete, group commands, broadcast, prune_devices, get_bot_stats.
+State Management: Tracking selected device per operator, aliases, groups, device online status.
+Alias Resolution: Translating aliases to DeviceIDs when processing commands.
+Command Relaying: Making device-specific commands available for the correct app instance to retrieve via polling.
+Error Handling & State Management: Implement robust error handling and state management throughout all modules and workflows. Use the LogManager effectively. Persist critical state information to handle app restarts.
+Testing: Conduct rigorous, comprehensive testing on physical devices and emulators across the entire target Android version range (API 23-35+). Test each C2 command individually and in sequence. Verify all configurations work dynamically. Test encryption/decryption (partial and full). Test persistence mechanisms. Test error handling and recovery. Test alias usage at the bot level.
+This complete prompt provides a detailed blueprint for the AI code generator, incorporating all discussed features, the modular structure, the interactive C2 command system, and compatibility requirements
